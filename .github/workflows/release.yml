@@ -1,0 +1,55 @@
+name: Bump Tag
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - main
+    paths:
+    - '**/*.tpl'
+    - '**/*.tf'
+    - .github/workflows/release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Bump patch tag
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'ukhsa-collaboration'
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine next tag
+      id: bump
+      run: |
+        git fetch --tags --force
+        latest=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "latest=$latest"
+        version=${latest#v}
+        IFS='.' read -r major minor patch <<<"$version"
+        major=${major:-0}
+        minor=${minor:-0}
+        patch=${patch:-0}
+        next="v${major}.${minor}.$((patch + 1))"
+        echo "next=$next" >> "$GITHUB_OUTPUT"
+
+    - name: Configure git user
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+    - name: Create tag
+      run: git tag ${{ steps.bump.outputs.next }}
+
+    - name: Push tag
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }} ${{ steps.bump.outputs.next }}
