@@ -161,3 +161,14 @@ variable "enable_control_tower_backup_monthly" {
   type        = bool
   default     = false
 }
+
+variable "backup_central_account_id" {
+  description = "Optional AWS account ID for the central backup account that will copy recovery points encrypted by this Aurora KMS key."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.backup_central_account_id == null || can(regex("^\\d{12}$", var.backup_central_account_id))
+    error_message = "backup_central_account_id must be null or a 12-digit AWS account ID."
+  }
+}

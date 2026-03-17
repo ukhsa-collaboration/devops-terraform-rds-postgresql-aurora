@@ -53,6 +53,10 @@ locals {
     aws-control-tower-backupweekly  = var.enable_control_tower_backup_weekly
     aws-control-tower-backupmonthly = var.enable_control_tower_backup_monthly
   }
+  backup_kms_principal_identifiers = var.backup_central_account_id == null ? [] : [
+    "arn:aws:iam::${var.backup_central_account_id}:role/aws-service-role/backup.amazonaws.com/AWSServiceRoleForBackup",
+    "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+  ]
 }
 
 check "window_separation" {
@@ -81,6 +85,8 @@ check "production_backup_tags_enabled" {
 # Data Lookups
 ################################################################################
 data "aws_region" "current" {}
+
+data "aws_caller_identity" "current" {}
 
 data "aws_vpc" "main" {
   filter {
@@ -243,12 +249,72 @@ module "kms" {
   source  = "terraform-aws-modules/kms/aws"
   version = "4.2.0"
 
-  deletion_window_in_days = 7
+  deletion_window_in_days = 30
   enable_key_rotation     = true
   is_enabled              = true
   key_usage               = "ENCRYPT_DECRYPT"
 
   aliases = ["rds/${local.names.cluster}"]
+
+  key_statements = var.backup_central_account_id == null ? null : [
+    {
+      sid    = "IAMUserPermissions"
+      effect = "Allow"
+      actions = [
+        "kms:List*",
+        "kms:Get*",
+        "kms:Describe*"
+      ]
+      resources = ["*"]
+      principals = [
+        {
+          type        = "AWS"
+          identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+        }
+      ]
+    },
+    {
+      sid    = "AllowBackupAndWorkloadKeyUsage"
+      effect = "Allow"
+      actions = [
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey*",
+        "kms:DescribeKey"
+      ]
+      resources = ["*"]
+      principals = [
+        {
+          type        = "AWS"
+          identifiers = local.backup_kms_principal_identifiers
+        }
+      ]
+    },
+    {
+      sid    = "AllowBackupAndWorkloadGrantManagement"
+      effect = "Allow"
+      actions = [
+        "kms:CreateGrant",
+        "kms:ListGrants",
+        "kms:RevokeGrant"
+      ]
+      resources = ["*"]
+      principals = [
+        {
+          type        = "AWS"
+          identifiers = local.backup_kms_principal_identifiers
+        }
+      ]
+      condition = [
+        {
+          test     = "Bool"
+          variable = "kms:GrantIsForAWSResource"
+          values   = ["true"]
+        }
+      ]
+    }
+  ]
 }
 
 ################################################################################

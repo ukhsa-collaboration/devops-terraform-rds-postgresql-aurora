@@ -26,7 +26,8 @@ module "aurora_postgresql" {
   instance_count      = 2
   deletion_protection = true
 
-  enable_http_endpoint = false
+  backup_central_account_id = "123456789012"
+  enable_http_endpoint      = false
 }
 
 module "vpc" {
