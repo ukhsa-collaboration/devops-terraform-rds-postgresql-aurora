@@ -26,6 +26,7 @@ module "aurora_postgresql" {
   instance_count      = 2
   deletion_protection = true
 
+  backup_central_account_id      = "123456789012"
   backup_cross_account_role_name = "AWSServiceRoleForBackup"
   enable_http_endpoint           = false
 }

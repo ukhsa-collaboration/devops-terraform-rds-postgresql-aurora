@@ -167,3 +167,9 @@ variable "backup_cross_account_role_name" {
   type        = string
   default     = null
 }
+
+variable "backup_central_account_id" {
+  description = "Optional AWS account ID for the central backup account that will copy recovery points encrypted by this Aurora KMS key."
+  type        = string
+  default     = null
+}

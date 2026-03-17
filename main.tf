@@ -252,34 +252,86 @@ module "kms" {
 
   aliases = ["rds/${local.names.cluster}"]
 
-  key_statements = var.backup_cross_account_role_name == null ? null : [
-    {
-      sid    = "AllowUseOfKeyByAuthorizedBackupPrincipal"
-      effect = "Allow"
-      actions = [
-        "kms:DescribeKey",
-        "kms:Encrypt",
-        "kms:Decrypt",
-        "kms:ReEncrypt*",
-        "kms:GenerateDataKey",
-        "kms:GenerateDataKeyWithoutPlaintext"
-      ]
-      resources = ["*"]
-      principals = [
-        {
-          type        = "AWS"
-          identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.backup_cross_account_role_name}"]
-        }
-      ]
-      condition = [
-        {
-          test     = "StringEquals"
-          variable = "kms:ViaService"
-          values   = ["backup.amazonaws.com"]
-        }
-      ]
-    }
-  ]
+  key_statements = concat(
+    var.backup_cross_account_role_name == null ? [] : [
+      {
+        sid    = "AllowUseOfKeyByAuthorizedBackupPrincipal"
+        effect = "Allow"
+        actions = [
+          "kms:DescribeKey",
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey",
+          "kms:GenerateDataKeyWithoutPlaintext"
+        ]
+        resources = ["*"]
+        principals = [
+          {
+            type        = "AWS"
+            identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.backup_cross_account_role_name}"]
+          }
+        ]
+        condition = [
+          {
+            test     = "StringEquals"
+            variable = "kms:ViaService"
+            values   = ["backup.amazonaws.com"]
+          }
+        ]
+      }
+    ],
+    var.backup_central_account_id == null ? [] : [
+      {
+        sid    = "KmsPermissions"
+        effect = "Allow"
+        actions = [
+          "kms:ListKeys",
+          "kms:DescribeKey",
+          "kms:GenerateDataKey",
+          "kms:ListAliases"
+        ]
+        resources = ["*"]
+        principals = [
+          {
+            type        = "AWS"
+            identifiers = ["arn:aws:iam::${var.backup_central_account_id}:root"]
+          }
+        ]
+      },
+      {
+        sid    = "KmsCreateGrantPermissions"
+        effect = "Allow"
+        actions = [
+          "kms:CreateGrant"
+        ]
+        resources = ["*"]
+        principals = [
+          {
+            type        = "AWS"
+            identifiers = ["arn:aws:iam::${var.backup_central_account_id}:root"]
+          }
+        ]
+        condition = [
+          {
+            test     = "ForAnyValue:StringEquals"
+            variable = "kms:EncryptionContextKeys"
+            values   = ["aws:backup:backup-vault"]
+          },
+          {
+            test     = "Bool"
+            variable = "kms:GrantIsForAWSResource"
+            values   = ["true"]
+          },
+          {
+            test     = "StringLike"
+            variable = "kms:ViaService"
+            values   = ["backup.*.amazonaws.com"]
+          }
+        ]
+      }
+    ]
+  )
 }
 
 ################################################################################
