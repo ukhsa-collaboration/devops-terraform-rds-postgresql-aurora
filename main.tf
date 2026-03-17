@@ -53,7 +53,7 @@ locals {
     aws-control-tower-backupweekly  = var.enable_control_tower_backup_weekly
     aws-control-tower-backupmonthly = var.enable_control_tower_backup_monthly
   }
-  backup_kms_principal_identifiers = [
+  backup_kms_principal_identifiers = var.backup_central_account_id == null ? [] : [
     "arn:aws:iam::${var.backup_central_account_id}:role/aws-service-role/backup.amazonaws.com/AWSServiceRoleForBackup",
     "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
   ]
