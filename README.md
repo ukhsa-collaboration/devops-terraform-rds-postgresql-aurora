@@ -40,6 +40,7 @@ This module intentionally does not try to be a generic Aurora abstraction. The b
 - IAM database authentication is enabled and Data API is disabled by default.
 - Control Tower backup schedule tags (hourly/daily/weekly/monthly) are disabled by default but can be toggled individually.
 - In `Production`, at least one Control Tower backup schedule tag must remain enabled.
+- An optional AWS Backup cross-account role in the member account can be granted KMS permissions on the Aurora encryption key via `backup_cross_account_role_name`.
 
 ## Example run
 
@@ -96,6 +97,7 @@ terraform plan
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_backup_retention_period"></a> [backup\_retention\_period](#input\_backup\_retention\_period) | Optional override for backup retention days. If null, environment\_tier defaults are used. | `number` | `null` | no |
+| <a name="input_backup_cross_account_role_name"></a> [backup\_cross\_account\_role\_name](#input\_backup\_cross\_account\_role\_name) | Optional IAM role name in this member account that AWS Backup uses for cross-account backup operations against this Aurora KMS key. | `string` | `null` | no |
 | <a name="input_db_subnet_group_name"></a> [db\_subnet\_group\_name](#input\_db\_subnet\_group\_name) | Optional existing DB subnet group name. If null, defaults to the VPC name pattern (<name\_prefix>-vpc-main). | `string` | `null` | no |
 | <a name="input_deletion_protection"></a> [deletion\_protection](#input\_deletion\_protection) | Flag to protect the RDS instance from accidental deletion. | `bool` | `true` | no |
 | <a name="input_enable_control_tower_backup_daily"></a> [enable\_control\_tower\_backup\_daily](#input\_enable\_control\_tower\_backup\_daily) | Enable Control Tower daily backup tag on the cluster. | `bool` | `false` | no |

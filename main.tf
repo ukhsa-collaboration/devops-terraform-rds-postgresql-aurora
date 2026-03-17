@@ -82,6 +82,8 @@ check "production_backup_tags_enabled" {
 ################################################################################
 data "aws_region" "current" {}
 
+data "aws_caller_identity" "current" {}
+
 data "aws_vpc" "main" {
   filter {
     name   = "tag:Name"
@@ -249,6 +251,35 @@ module "kms" {
   key_usage               = "ENCRYPT_DECRYPT"
 
   aliases = ["rds/${local.names.cluster}"]
+
+  key_statements = var.backup_cross_account_role_name == null ? {} : {
+    AllowUseOfKeyByAuthorizedBackupPrincipal = {
+      sid    = "AllowUseOfKeyByAuthorizedBackupPrincipal"
+      effect = "Allow"
+      actions = [
+        "kms:DescribeKey",
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKeyWithoutPlaintext"
+      ]
+      resources = ["*"]
+      principals = [
+        {
+          type        = "AWS"
+          identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.backup_cross_account_role_name}"]
+        }
+      ]
+      condition = [
+        {
+          test     = "StringEquals"
+          variable = "kms:ViaService"
+          values   = ["backup.amazonaws.com"]
+        }
+      ]
+    }
+  }
 }
 
 ################################################################################

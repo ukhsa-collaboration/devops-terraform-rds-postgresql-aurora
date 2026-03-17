@@ -161,3 +161,9 @@ variable "enable_control_tower_backup_monthly" {
   type        = bool
   default     = false
 }
+
+variable "backup_cross_account_role_name" {
+  description = "Optional IAM role name in this member account that AWS Backup uses for cross-account backup operations against the Aurora KMS key."
+  type        = string
+  default     = null
+}
