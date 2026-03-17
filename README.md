@@ -40,7 +40,6 @@ This module intentionally does not try to be a generic Aurora abstraction. The b
 - IAM database authentication is enabled and Data API is disabled by default.
 - Control Tower backup schedule tags (hourly/daily/weekly/monthly) are disabled by default but can be toggled individually.
 - In `Production`, at least one Control Tower backup schedule tag must remain enabled.
-- An optional AWS Backup cross-account role in the member account can be granted KMS permissions on the Aurora encryption key via `backup_cross_account_role_name`.
 
 ## Example run
 
