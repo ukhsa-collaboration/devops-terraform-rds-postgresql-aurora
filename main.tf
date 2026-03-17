@@ -252,8 +252,8 @@ module "kms" {
 
   aliases = ["rds/${local.names.cluster}"]
 
-  key_statements = var.backup_cross_account_role_name == null ? {} : {
-    AllowUseOfKeyByAuthorizedBackupPrincipal = {
+  key_statements = var.backup_cross_account_role_name == null ? null : [
+    {
       sid    = "AllowUseOfKeyByAuthorizedBackupPrincipal"
       effect = "Allow"
       actions = [
@@ -279,7 +279,7 @@ module "kms" {
         }
       ]
     }
-  }
+  ]
 }
 
 ################################################################################
