@@ -53,6 +53,10 @@ locals {
     aws-control-tower-backupweekly  = var.enable_control_tower_backup_weekly
     aws-control-tower-backupmonthly = var.enable_control_tower_backup_monthly
   }
+  backup_kms_principal_identifiers = var.backup_central_account_id == null ? [] : [
+    "arn:aws:iam:::${var.backup_central_account_id}:role/aws-service-role/backup.amazonaws.com/AWSServiceRoleForBackup",
+    "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+  ]
 }
 
 check "window_separation" {
@@ -245,85 +249,68 @@ module "kms" {
   source  = "terraform-aws-modules/kms/aws"
   version = "4.2.0"
 
-  deletion_window_in_days = 7
+  deletion_window_in_days = 30
   enable_key_rotation     = true
   is_enabled              = true
   key_usage               = "ENCRYPT_DECRYPT"
 
   aliases = ["rds/${local.names.cluster}"]
 
-  key_statements = var.backup_cross_account_role_name == null && var.backup_central_account_id == null ? null : [
+  key_statements = var.backup_central_account_id == null ? [] : [
     {
-      sid    = "AllowUseOfKeyByAuthorizedBackupPrincipal"
+      sid    = "IAMUserPermissions"
       effect = "Allow"
       actions = [
-        "kms:DescribeKey",
+        "kms:List*",
+        "kms:Get*",
+        "kms:Describe*"
+      ]
+      resources = ["*"]
+      principals = [
+        {
+          type        = "AWS"
+          identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+        }
+      ]
+    },
+    {
+      sid    = "AllowBackupAndWorkloadKeyUsage"
+      effect = "Allow"
+      actions = [
         "kms:Encrypt",
         "kms:Decrypt",
         "kms:ReEncrypt*",
-        "kms:GenerateDataKey",
-        "kms:GenerateDataKeyWithoutPlaintext"
+        "kms:GenerateDataKey*",
+        "kms:DescribeKey"
       ]
       resources = ["*"]
       principals = [
         {
           type        = "AWS"
-          identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.backup_cross_account_role_name}"]
-        }
-      ]
-      condition = [
-        {
-          test     = "StringEquals"
-          variable = "kms:ViaService"
-          values   = ["backup.amazonaws.com"]
+          identifiers = local.backup_kms_principal_identifiers
         }
       ]
     },
     {
-      sid    = "KmsPermissions"
+      sid    = "AllowBackupAndWorkloadGrantManagement"
       effect = "Allow"
       actions = [
-        "kms:ListKeys",
-        "kms:DescribeKey",
-        "kms:GenerateDataKey",
-        "kms:ListAliases"
+        "kms:CreateGrant",
+        "kms:ListGrants",
+        "kms:RevokeGrant"
       ]
       resources = ["*"]
       principals = [
         {
           type        = "AWS"
-          identifiers = ["arn:aws:iam::${var.backup_central_account_id}:root"]
-        }
-      ]
-    },
-    {
-      sid    = "KmsCreateGrantPermissions"
-      effect = "Allow"
-      actions = [
-        "kms:CreateGrant"
-      ]
-      resources = ["*"]
-      principals = [
-        {
-          type        = "AWS"
-          identifiers = ["arn:aws:iam::${var.backup_central_account_id}:root"]
+          identifiers = local.backup_kms_principal_identifiers
         }
       ]
       condition = [
-        {
-          test     = "ForAnyValue:StringEquals"
-          variable = "kms:EncryptionContextKeys"
-          values   = ["aws:backup:backup-vault"]
-        },
         {
           test     = "Bool"
           variable = "kms:GrantIsForAWSResource"
           values   = ["true"]
-        },
-        {
-          test     = "StringLike"
-          variable = "kms:ViaService"
-          values   = ["backup.*.amazonaws.com"]
         }
       ]
     }

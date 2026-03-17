@@ -162,14 +162,13 @@ variable "enable_control_tower_backup_monthly" {
   default     = false
 }
 
-variable "backup_cross_account_role_name" {
-  description = "Optional IAM role name in this member account that AWS Backup uses for cross-account backup operations against the Aurora KMS key."
-  type        = string
-  default     = null
-}
-
 variable "backup_central_account_id" {
   description = "Optional AWS account ID for the central backup account that will copy recovery points encrypted by this Aurora KMS key."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.backup_central_account_id == null || can(regex("^\\d{12}$", var.backup_central_account_id))
+    error_message = "backup_central_account_id must be null or a 12-digit AWS account ID."
+  }
 }
