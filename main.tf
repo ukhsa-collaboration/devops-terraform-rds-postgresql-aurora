@@ -215,7 +215,7 @@ resource "aws_rds_cluster" "this" {
 
   lifecycle {
     # These are managed by AWS Backup and can cause unnecessary diffs if AWS Backup changes the preferred backup window.
-    ignore_changes = [ preferred_backup_window, backup_retention_period ]
+    ignore_changes = [preferred_backup_window, backup_retention_period]
   }
 }
 
