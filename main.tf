@@ -47,6 +47,10 @@ locals {
       publicly_accessible        = false
     }
   }
+  private_subnet_ingress_rules = {
+    for idx, subnet_id in sort(data.aws_subnets.private.ids) :
+    "private_subnet_${idx}" => data.aws_subnet.private[subnet_id].cidr_block
+  }
   control_tower_backup_tag_flags = {
     aws-control-tower-backuphourly  = var.enable_control_tower_backup_hourly
     aws-control-tower-backupdaily   = var.enable_control_tower_backup_daily
@@ -282,17 +286,14 @@ resource "aws_vpc_security_group_egress_rule" "this" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "this" {
-  for_each = {
-    for idx, subnet in data.aws_subnet.private :
-    "private_subnet_${idx}" => subnet
-  }
+  for_each = local.private_subnet_ingress_rules
 
   description       = "Private subnet DB access"
   from_port         = local.db_port
   to_port           = local.db_port
   ip_protocol       = "tcp"
   security_group_id = aws_security_group.this.id
-  cidr_ipv4         = each.value.cidr_block
+  cidr_ipv4         = each.value
   tags = {
     Name = "${local.names.cluster}-${each.key}"
   }
