@@ -47,6 +47,10 @@ locals {
       publicly_accessible        = false
     }
   }
+  private_subnet_ingress_rules = {
+    for idx, subnet_id in sort(data.aws_subnets.private.ids) :
+    "private_subnet_${idx}" => data.aws_subnet.private[subnet_id].cidr_block
+  }
   control_tower_backup_tag_flags = {
     aws-control-tower-backuphourly  = var.enable_control_tower_backup_hourly
     aws-control-tower-backupdaily   = var.enable_control_tower_backup_daily
@@ -140,19 +144,44 @@ check "database_subnets_present" {
   }
 }
 
-################################################################################
-# RDS
-################################################################################
 data "aws_rds_engine_version" "postgresql" {
   engine  = "aurora-postgresql"
   version = var.engine_version
 }
+data "aws_iam_policy_document" "monitoring_rds_assume_role" {
 
-module "cluster" {
-  source  = "terraform-aws-modules/rds-aurora/aws"
-  version = "10.2.0"
 
-  name                                = local.names.cluster
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = [data.aws_service_principal.monitoring_rds.name]
+    }
+  }
+}
+
+data "aws_partition" "current" {}
+
+data "aws_service_principal" "monitoring_rds" {
+  service_name = "monitoring.rds"
+}
+
+################################################################################
+# RDS Cluster
+################################################################################
+resource "aws_iam_role" "rds_enhanced_monitoring" {
+  name                  = "${local.names.cluster}-monitor"
+  assume_role_policy    = data.aws_iam_policy_document.monitoring_rds_assume_role.json
+  force_detach_policies = true
+}
+
+resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
+  role       = aws_iam_role.rds_enhanced_monitoring.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
+resource "aws_rds_cluster" "this" {
   engine                              = data.aws_rds_engine_version.postgresql.engine
   engine_mode                         = "provisioned"
   engine_version                      = data.aws_rds_engine_version.postgresql.version
@@ -162,86 +191,138 @@ module "cluster" {
   manage_master_user_password         = true
   iam_database_authentication_enabled = true
 
-  master_user_password_rotation_automatically_after_days = 30
-
   deletion_protection = var.deletion_protection
 
-  backup_retention_period      = coalesce(var.backup_retention_period, local.selected_environment_defaults.backup_retention_period)
-  preferred_backup_window      = coalesce(var.preferred_backup_window, local.selected_environment_defaults.preferred_backup_window)
-  preferred_maintenance_window = coalesce(var.preferred_maintenance_window, local.selected_environment_defaults.preferred_maintenance_window)
-
-  vpc_id               = data.aws_vpc.main.id
-  db_subnet_group_name = data.aws_db_subnet_group.db.name
-
-  cluster_parameter_group = {
-    name        = local.names.cluster_param_group
-    family      = "aurora-postgresql${local.engine_major_version}"
-    description = "Opinionated security baseline for ${local.names.cluster}"
-    parameters = [
-      {
-        name         = "log_min_duration_statement"
-        value        = 4000
-        apply_method = "immediate"
-      },
-      {
-        name         = "rds.force_ssl"
-        value        = 1
-        apply_method = "immediate"
-      },
-      {
-        name         = "log_disconnections"
-        value        = "1"
-        apply_method = "immediate"
-      },
-      {
-        name         = "log_connections"
-        value        = "1"
-        apply_method = "immediate"
-      }
-    ]
+  cluster_identifier                    = local.names.cluster
+  copy_tags_to_snapshot                 = true
+  backup_retention_period               = coalesce(var.backup_retention_period, local.selected_environment_defaults.backup_retention_period)
+  db_cluster_parameter_group_name       = aws_rds_cluster_parameter_group.this.id
+  db_subnet_group_name                  = data.aws_db_subnet_group.db.name
+  enable_http_endpoint                  = var.enable_http_endpoint
+  monitoring_interval                   = 60
+  monitoring_role_arn                   = aws_iam_role.rds_enhanced_monitoring.arn
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  port                                  = local.db_port
+  preferred_backup_window               = coalesce(var.preferred_backup_window, local.selected_environment_defaults.preferred_backup_window)
+  preferred_maintenance_window          = coalesce(var.preferred_maintenance_window, local.selected_environment_defaults.preferred_maintenance_window)
+  tags = {
+    for tag_name, enabled in local.control_tower_backup_tag_flags :
+    tag_name => "true" if enabled
   }
+  vpc_security_group_ids = [aws_security_group.this.id]
 
-  security_group_ingress_rules = {
-    for idx, cidr in [for s in data.aws_subnet.private : s.cidr_block] :
-    "private_subnet_${idx}" => {
-      description = "Private subnet DB access"
-      from_port   = local.db_port
-      to_port     = local.db_port
-      cidr_ipv4   = cidr
-      ip_protocol = "tcp"
-    }
-  }
-  security_group_egress_rules = {
-    self_only = {
-      description                  = "Allow egress only to the Aurora cluster security group"
-      ip_protocol                  = "-1"
-      from_port                    = -1
-      to_port                      = -1
-      referenced_security_group_id = "self"
-    }
-  }
-
-  create_cloudwatch_log_group                   = true
-  cluster_performance_insights_enabled          = true
-  cluster_performance_insights_retention_period = 7
-  create_monitoring_role                        = true
-  cluster_monitoring_interval                   = 60
-
-  apply_immediately = false
-
-  enable_http_endpoint = var.enable_http_endpoint
-
-  serverlessv2_scaling_configuration = {
+  serverlessv2_scaling_configuration {
     min_capacity = var.min_capacity
     max_capacity = var.max_capacity
   }
 
-  cluster_instance_class = "db.serverless"
-  instances              = local.aurora_instances
+  lifecycle {
+    # These are managed by AWS Backup and can cause unnecessary diffs if AWS Backup changes the preferred backup window.
+    ignore_changes = [preferred_backup_window, backup_retention_period]
+  }
+}
 
-  cluster_tags = {
-    for tag_name, enabled in local.control_tower_backup_tag_flags :
-    tag_name => "true" if enabled
+resource "aws_rds_cluster_parameter_group" "this" {
+  name_prefix = "${local.names.cluster_param_group}-"
+  family      = "aurora-postgresql${local.engine_major_version}"
+  description = "Opinionated security baseline for ${local.names.cluster}"
+
+  parameter {
+    name         = "log_min_duration_statement"
+    value        = 4000
+    apply_method = "immediate"
+  }
+
+  parameter {
+    name         = "rds.force_ssl"
+    value        = 1
+    apply_method = "immediate"
+  }
+
+  parameter {
+    name         = "log_disconnections"
+    value        = "1"
+    apply_method = "immediate"
+  }
+
+  parameter {
+    name         = "log_connections"
+    value        = "1"
+    apply_method = "immediate"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_security_group" "this" {
+  name_prefix = "${local.names.cluster}-"
+  vpc_id      = data.aws_vpc.main.id
+  description = "Control traffic to/from RDS Aurora ${local.names.cluster}"
+
+  tags = {
+    Name = local.names.cluster
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_vpc_security_group_egress_rule" "this" {
+  for_each = toset(["self_only"])
+
+  description                  = "Allow egress only to the Aurora cluster security group"
+  from_port                    = -1
+  to_port                      = -1
+  ip_protocol                  = "-1"
+  referenced_security_group_id = aws_security_group.this.id
+  security_group_id            = aws_security_group.this.id
+  tags = {
+    Name = "${local.names.cluster}-${each.key}"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "this" {
+  for_each = local.private_subnet_ingress_rules
+
+  description       = "Private subnet DB access"
+  from_port         = local.db_port
+  to_port           = local.db_port
+  ip_protocol       = "tcp"
+  security_group_id = aws_security_group.this.id
+  cidr_ipv4         = each.value
+  tags = {
+    Name = "${local.names.cluster}-${each.key}"
+  }
+}
+
+###################################################################################
+## RDS Cluster Instances
+###################################################################################
+resource "aws_rds_cluster_instance" "this" {
+  for_each = { for k, v in local.aurora_instances : k => v }
+
+  auto_minor_version_upgrade            = each.value.auto_minor_version_upgrade
+  cluster_identifier                    = aws_rds_cluster.this.id
+  copy_tags_to_snapshot                 = true
+  db_subnet_group_name                  = data.aws_db_subnet_group.db.name
+  engine                                = data.aws_rds_engine_version.postgresql.engine
+  engine_version                        = data.aws_rds_engine_version.postgresql.version
+  identifier                            = "${local.names.cluster}-${each.key}"
+  instance_class                        = "db.serverless"
+  monitoring_interval                   = 60
+  monitoring_role_arn                   = aws_iam_role.rds_enhanced_monitoring.arn
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  preferred_maintenance_window          = coalesce(var.preferred_maintenance_window, local.selected_environment_defaults.preferred_maintenance_window)
+  promotion_tier                        = 0
+  publicly_accessible                   = each.value.publicly_accessible
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -317,9 +398,6 @@ module "kms" {
   ]
 }
 
-################################################################################
-# Developer bastion
-################################################################################
 ################################################################################
 # SSM Bastion
 ################################################################################
