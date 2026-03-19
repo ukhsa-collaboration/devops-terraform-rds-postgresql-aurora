@@ -282,22 +282,17 @@ resource "aws_vpc_security_group_egress_rule" "this" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "this" {
-  for_each = toset([
-    "private_subnet_0",
-    "private_subnet_1",
-    "private_subnet_2",
-  ])
+  for_each = {
+    for idx, subnet in data.aws_subnet.private :
+    "private_subnet_${idx}" => subnet
+  }
 
   description       = "Private subnet DB access"
   from_port         = local.db_port
   to_port           = local.db_port
   ip_protocol       = "tcp"
   security_group_id = aws_security_group.this.id
-  cidr_ipv4 = {
-    private_subnet_0 = [for s in data.aws_subnet.private : s.cidr_block][0]
-    private_subnet_1 = [for s in data.aws_subnet.private : s.cidr_block][1]
-    private_subnet_2 = [for s in data.aws_subnet.private : s.cidr_block][2]
-  }[each.key]
+  cidr_ipv4         = each.value.cidr_block
   tags = {
     Name = "${local.names.cluster}-${each.key}"
   }
