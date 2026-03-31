@@ -147,7 +147,7 @@ data "aws_rds_engine_version" "postgresql" {
   engine       = local.engine
   version      = var.engine_version
   default_only = true
-  latest = true
+  latest       = true
 }
 
 data "aws_iam_policy_document" "monitoring_rds_assume_role" {
