@@ -1,10 +1,10 @@
 variable "engine_version" {
-  description = "Version of the RDS engine"
+  description = "Major version of the Aurora engine."
   type        = string
 
   validation {
-    condition     = can(regex("^\\d+", var.engine_version))
-    error_message = "engine_version must start with a major version number, e.g. 14.11 or 15.4."
+    condition     = can(regex("^\\d+$", var.engine_version))
+    error_message = "engine_version must be a major version only, e.g. 14, 15, or 16."
   }
 }
 
