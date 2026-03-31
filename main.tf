@@ -1,11 +1,10 @@
-
-
 locals {
   aws_region_short_map = {
     eu-west-2 = "euw2"
     eu-west-1 = "euw1"
     us-east-1 = "use1"
   }
+
   aws_short_region = lookup(local.aws_region_short_map, data.aws_region.current.region, replace(data.aws_region.current.region, "-", ""))
   name_prefix      = "aw-${var.project_short_name}-${local.aws_short_region}-${var.environment_name}"
   cluster_name     = "${local.name_prefix}-rds-pg"
@@ -40,7 +39,7 @@ locals {
   }
 
   selected_environment_defaults = local.environment_defaults[var.environment_tier]
-  engine_major_version          = regex("^\\d+", var.engine_version)
+  engine                        = "aurora-postgresql"
   aurora_instances = {
     for i in range(var.instance_count) : "instance-${i + 1}" => {
       auto_minor_version_upgrade = true
@@ -145,9 +144,12 @@ check "database_subnets_present" {
 }
 
 data "aws_rds_engine_version" "postgresql" {
-  engine  = "aurora-postgresql"
-  version = var.engine_version
+  engine       = local.engine
+  version      = var.engine_version
+  default_only = true
+  latest       = true
 }
+
 data "aws_iam_policy_document" "monitoring_rds_assume_role" {
 
 
@@ -182,9 +184,9 @@ resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
 }
 
 resource "aws_rds_cluster" "this" {
-  engine                              = data.aws_rds_engine_version.postgresql.engine
+  engine                              = local.engine
   engine_mode                         = "provisioned"
-  engine_version                      = data.aws_rds_engine_version.postgresql.version
+  engine_version                      = var.engine_version
   storage_encrypted                   = true
   kms_key_id                          = module.kms.key_arn
   master_username                     = var.master_username
@@ -225,7 +227,7 @@ resource "aws_rds_cluster" "this" {
 
 resource "aws_rds_cluster_parameter_group" "this" {
   name_prefix = "${local.names.cluster_param_group}-"
-  family      = "aurora-postgresql${local.engine_major_version}"
+  family      = data.aws_rds_engine_version.postgresql.parameter_group_family
   description = "Opinionated security baseline for ${local.names.cluster}"
 
   parameter {
@@ -309,8 +311,8 @@ resource "aws_rds_cluster_instance" "this" {
   cluster_identifier                    = aws_rds_cluster.this.id
   copy_tags_to_snapshot                 = true
   db_subnet_group_name                  = data.aws_db_subnet_group.db.name
-  engine                                = data.aws_rds_engine_version.postgresql.engine
-  engine_version                        = data.aws_rds_engine_version.postgresql.version
+  engine                                = local.engine
+  engine_version                        = var.engine_version
   identifier                            = "${local.names.cluster}-${each.key}"
   instance_class                        = "db.serverless"
   monitoring_interval                   = 60

@@ -19,7 +19,7 @@ module "aurora_postgresql" {
   project_short_name = "demo"
   environment_name   = "prd"
   environment_tier   = "Production"
-  engine_version     = "16.3"
+  engine_version     = "16"
 
   min_capacity        = 1
   max_capacity        = 4

@@ -51,6 +51,22 @@ terraform init
 terraform plan
 ```
 
+## Engine version tracking
+
+Set `engine_version` to the Aurora PostgreSQL major version only, for example `16`.
+
+The module enables `auto_minor_version_upgrade` on every cluster instance and sets `engine_version` on the cluster and instances to that major line, so AWS can apply minor upgrades during the maintenance window without Terraform reporting drift.
+
+Example:
+
+```hcl
+module "aurora_postgresql" {
+  source = "../.."
+
+  engine_version = "16"
+}
+```
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
@@ -115,7 +131,7 @@ terraform plan
 | <a name="input_enable_control_tower_backup_monthly"></a> [enable\_control\_tower\_backup\_monthly](#input\_enable\_control\_tower\_backup\_monthly) | Enable Control Tower monthly backup tag on the cluster. | `bool` | `false` | no |
 | <a name="input_enable_control_tower_backup_weekly"></a> [enable\_control\_tower\_backup\_weekly](#input\_enable\_control\_tower\_backup\_weekly) | Enable Control Tower weekly backup tag on the cluster. | `bool` | `false` | no |
 | <a name="input_enable_http_endpoint"></a> [enable\_http\_endpoint](#input\_enable\_http\_endpoint) | Enable Aurora Data API (disabled by default for tighter security posture) | `bool` | `false` | no |
-| <a name="input_engine_version"></a> [engine\_version](#input\_engine\_version) | Version of the RDS engine | `string` | n/a | yes |
+| <a name="input_engine_version"></a> [engine\_version](#input\_engine\_version) | Major version of the Aurora engine. | `string` | n/a | yes |
 | <a name="input_environment_name"></a> [environment\_name](#input\_environment\_name) | The name of the environment | `string` | `"dev"` | no |
 | <a name="input_environment_tier"></a> [environment\_tier](#input\_environment\_tier) | Environment policy tier that controls opinionated defaults. | `string` | `"Development"` | no |
 | <a name="input_instance_count"></a> [instance\_count](#input\_instance\_count) | Number of Aurora cluster instances to create. | `number` | `1` | no |
